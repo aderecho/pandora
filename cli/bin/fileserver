@@ -1,0 +1,31 @@
+#!/usr/bin/env php
+<?php
+
+$autoloadCandidates = [
+    __DIR__.'/../vendor/autoload.php',      // standalone checkout / composer install
+    __DIR__.'/../../../autoload.php',       // installed as a dependency (composer global require)
+];
+
+$autoloaded = false;
+
+foreach ($autoloadCandidates as $candidate) {
+    if (is_file($candidate)) {
+        require $candidate;
+        $autoloaded = true;
+        break;
+    }
+}
+
+if (! $autoloaded) {
+    fwrite(STDERR, "Unable to locate the Composer autoloader. Run `composer install` in the fileserver-cli package.\n");
+    exit(1);
+}
+
+use FileServerCli\Application;
+
+if (is_file(getcwd().'/.env') && class_exists(\Dotenv\Dotenv::class)) {
+    \Dotenv\Dotenv::createImmutable(getcwd())->safeLoad();
+}
+
+$application = new Application;
+exit($application->run());
