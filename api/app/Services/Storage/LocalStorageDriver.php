@@ -60,6 +60,8 @@ class LocalStorageDriver implements StorageDriverInterface
     {
         $absolute = $this->resolveExisting($bucket, $key);
 
+        clearstatcache(true, $absolute);
+
         if (! is_file($absolute)) {
             throw ObjectNotFoundException::forKey($bucket, $key);
         }
@@ -129,6 +131,8 @@ class LocalStorageDriver implements StorageDriverInterface
             $entryAbsolute = $directory.'/'.$name;
             $entryKey = $prefixNormalized.$name;
 
+            clearstatcache(true, $entryAbsolute);
+
             if (is_dir($entryAbsolute)) {
                 $entries[] = new FileObject(
                     bucket: $bucket,
@@ -173,6 +177,8 @@ class LocalStorageDriver implements StorageDriverInterface
 
     private function describe(string $bucket, string $key, string $absolute): FileObject
     {
+        clearstatcache(true, $absolute);
+
         return new FileObject(
             bucket: $bucket,
             key: $key,

@@ -8,6 +8,7 @@ use App\Models\StoredObject;
 use App\Policies\ApiTokenPolicy;
 use App\Policies\BucketPolicy;
 use App\Policies\ObjectPolicy;
+use App\Services\PresignedUrlService;
 use App\Services\Storage\LocalStorageDriver;
 use App\Services\Storage\StorageDriverInterface;
 use App\Services\Storage\StorageManager;
@@ -37,6 +38,10 @@ class FileServerServiceProvider extends ServiceProvider
         $this->app->bind(StorageDriverInterface::class, LocalStorageDriver::class);
 
         $this->app->singleton(StorageManager::class);
+
+        $this->app->singleton(PresignedUrlService::class, function ($app) {
+            return new PresignedUrlService(appKey: (string) config('app.key'));
+        });
 
         $this->app->singleton(VirusScannerInterface::class, function () {
             $config = config('fileserver.virus_scan');

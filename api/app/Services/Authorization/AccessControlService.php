@@ -84,21 +84,57 @@ class AccessControlService
         return false;
     }
 
-    private function isAdminTier(User $user): bool
+    public function isAdminTier(User $user): bool
     {
         $slug = $user->role?->slug;
 
         return $slug !== null && in_array(RoleSlug::from($slug), self::ADMIN_TIER_ROLES, true);
     }
 
+    /**
+     * Bucket IDs the actor may see for $permission, or null when they have
+     * unrestricted visibility (dashboard admin-tier roles only — API
+     * tokens are always explicitly scoped).
+     *
+     * @return array<int, int>|null
+     */
+    public function visibleBucketIds(User $user, ?ApiToken $token, string $permission): ?array
+    {
+        if ($token !== null) {
+            return $token->bucketScopes()
+                ->get()
+                ->filter(fn ($scope) => $scope->grants($permission))
+                ->pluck('bucket_id')
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        if ($this->isAdminTier($user)) {
+            return null;
+        }
+
+        return $user->bucketPermissions()
+            ->where($this->grantColumnFor($permission), true)
+            ->pluck('bucket_id')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     private function grantAllows(\App\Models\BucketUserPermission $grant, string $permission): bool
     {
+        return (bool) $grant->{$this->grantColumnFor($permission)};
+    }
+
+    private function grantColumnFor(string $permission): string
+    {
         return match ($permission) {
-            PermissionKey::BucketList->value, PermissionKey::ObjectList->value => $grant->can_list,
-            PermissionKey::BucketRead->value, PermissionKey::ObjectRead->value => $grant->can_read,
-            PermissionKey::BucketWrite->value, PermissionKey::ObjectWrite->value => $grant->can_write,
-            PermissionKey::BucketDelete->value, PermissionKey::ObjectDelete->value => $grant->can_delete,
-            default => false,
+            PermissionKey::BucketList->value, PermissionKey::ObjectList->value => 'can_list',
+            PermissionKey::BucketRead->value, PermissionKey::ObjectRead->value => 'can_read',
+            PermissionKey::BucketWrite->value, PermissionKey::ObjectWrite->value => 'can_write',
+            PermissionKey::BucketDelete->value, PermissionKey::ObjectDelete->value => 'can_delete',
+            default => 'can_list',
         };
     }
 }
