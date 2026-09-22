@@ -88,6 +88,26 @@ paths:
       responses:
         "200": { description: Logged out }
 
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Restore session state on SPA load/refresh
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: "#/components/schemas/User" }
+        "401": { description: Not authenticated }
+
   /buckets:
     get:
       tags: [Buckets]

@@ -34,6 +34,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         ->middleware('auth.api')
         ->name('auth.logout');
 
+    Route::get('/auth/me', [AuthController::class, 'me'])
+        ->middleware('auth.api')
+        ->name('auth.me');
+
     // Public, signature-verified — no bearer token or session required.
     Route::get('/public/objects/download', [PresignedUrlController::class, 'download'])->name('public.download');
     Route::put('/public/objects/upload', [PresignedUrlController::class, 'upload'])->name('public.upload');

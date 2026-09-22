@@ -53,6 +53,17 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Lets the SPA restore session state on page load/refresh without
+     * re-submitting credentials.
+     */
+    public function me(Request $request): JsonResponse
+    {
+        return ApiResponse::success([
+            'user' => new UserResource($request->user()->load('role')),
+        ]);
+    }
+
     public function logout(Request $request): JsonResponse
     {
         $userId = $request->user()?->id;
