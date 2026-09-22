@@ -2,12 +2,22 @@
 
 namespace App\Providers;
 
+use App\Models\ApiToken;
+use App\Models\Bucket;
+use App\Models\StoredObject;
+use App\Policies\ApiTokenPolicy;
+use App\Policies\BucketPolicy;
+use App\Policies\ObjectPolicy;
 use App\Services\Storage\LocalStorageDriver;
 use App\Services\Storage\StorageDriverInterface;
 use App\Services\Storage\StorageManager;
 use App\Services\VirusScan\ClamAvVirusScanner;
 use App\Services\VirusScan\NullVirusScanner;
 use App\Services\VirusScan\VirusScannerInterface;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class FileServerServiceProvider extends ServiceProvider
@@ -46,6 +56,18 @@ class FileServerServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        Gate::policy(Bucket::class, BucketPolicy::class);
+        Gate::policy(StoredObject::class, ObjectPolicy::class);
+        Gate::policy(ApiToken::class, ApiTokenPolicy::class);
+
+        RateLimiter::for('api', function (Request $request) {
+            $key = $request->user()?->id ?? $request->ip();
+
+            return Limit::perMinute((int) config('fileserver.rate_limit_api'))->by($key);
+        });
+
+        RateLimiter::for('auth', function (Request $request) {
+            return Limit::perMinute((int) config('fileserver.rate_limit_auth'))->by($request->ip());
+        });
     }
 }

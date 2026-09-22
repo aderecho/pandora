@@ -67,6 +67,14 @@ class Bucket extends Model
         return $this->hasMany(StoredObject::class);
     }
 
+    /**
+     * Buckets are addressed by name in the API (S3-style), not numeric ID.
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'name';
+    }
+
     public function isActive(): bool
     {
         return $this->status === BucketStatus::Active;
