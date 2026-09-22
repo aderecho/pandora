@@ -15,6 +15,12 @@ const router = createRouter({
       redirect: '/dashboard',
     },
     {
+      path: '/change-password',
+      name: 'change-password',
+      component: () => import('@/views/auth/ChangePasswordView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('@/views/DashboardView.vue'),
@@ -72,6 +78,10 @@ router.beforeEach(async (to) => {
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  if (auth.isAuthenticated && auth.user?.must_reset_password && to.name !== 'change-password') {
+    return { name: 'change-password' }
   }
 
   if (to.meta.requiresUserManagement && !auth.canManageUsers) {

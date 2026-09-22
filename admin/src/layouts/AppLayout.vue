@@ -71,8 +71,14 @@ async function handleLogout(): Promise<void> {
         <div class="border-t border-slate-200 p-4">
           <p class="text-sm font-medium text-slate-900 truncate">{{ auth.user?.name }}</p>
           <p class="text-xs text-slate-500 truncate">{{ auth.user?.role?.name }}</p>
+          <RouterLink
+            :to="{ name: 'change-password' }"
+            class="mt-3 block w-full rounded-md border border-slate-200 px-3 py-1.5 text-center text-sm text-slate-600 hover:bg-slate-100"
+          >
+            Change password
+          </RouterLink>
           <button
-            class="mt-3 w-full rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+            class="mt-2 w-full rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
             @click="handleLogout"
           >
             Log out

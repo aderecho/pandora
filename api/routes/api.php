@@ -38,6 +38,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         ->middleware('auth.api')
         ->name('auth.me');
 
+    Route::post('/auth/change-password', [AuthController::class, 'changePassword'])
+        ->middleware('auth.api')
+        ->name('auth.change-password');
+
     // Public, signature-verified — no bearer token or session required.
     Route::get('/public/objects/download', [PresignedUrlController::class, 'download'])->name('public.download');
     Route::put('/public/objects/upload', [PresignedUrlController::class, 'upload'])->name('public.upload');

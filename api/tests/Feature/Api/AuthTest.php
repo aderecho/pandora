@@ -70,4 +70,43 @@ class AuthTest extends TestCase
     {
         $this->getJson('/api/v1/auth/me')->assertStatus(401);
     }
+
+    public function test_user_can_change_their_own_password_and_clears_must_reset_flag(): void
+    {
+        $user = User::factory()->role(RoleSlug::SuperAdmin)->create([
+            'email' => 'admin@example.com',
+            'password' => Hash::make('old-password'),
+            'must_reset_password' => true,
+        ]);
+
+        $this->postJson('/api/v1/auth/login', ['email' => 'admin@example.com', 'password' => 'old-password'])
+            ->assertStatus(200);
+
+        $this->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'old-password',
+            'new_password' => 'brand-new-password',
+            'new_password_confirmation' => 'brand-new-password',
+        ])->assertStatus(200);
+
+        $user->refresh();
+        $this->assertFalse($user->must_reset_password);
+        $this->assertTrue(Hash::check('brand-new-password', $user->password));
+    }
+
+    public function test_change_password_rejects_wrong_current_password(): void
+    {
+        User::factory()->role(RoleSlug::SuperAdmin)->create([
+            'email' => 'admin2@example.com',
+            'password' => Hash::make('old-password'),
+        ]);
+
+        $this->postJson('/api/v1/auth/login', ['email' => 'admin2@example.com', 'password' => 'old-password'])
+            ->assertStatus(200);
+
+        $this->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'wrong',
+            'new_password' => 'brand-new-password',
+            'new_password_confirmation' => 'brand-new-password',
+        ])->assertStatus(422)->assertJsonPath('error.code', 'INVALID_CREDENTIALS');
+    }
 }

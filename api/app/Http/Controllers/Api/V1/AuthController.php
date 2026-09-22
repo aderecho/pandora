@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\ActorType;
 use App\Enums\AuditStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ChangePasswordRequest;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Http\Responses\ApiResponse;
@@ -62,6 +63,30 @@ class AuthController extends Controller
         return ApiResponse::success([
             'user' => new UserResource($request->user()->load('role')),
         ]);
+    }
+
+    /**
+     * Self-service password change — completes the loop for both
+     * admin-generated first-login passwords and force-password-reset
+     * (must_reset_password), neither of which the user could otherwise
+     * act on themselves.
+     */
+    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! Hash::check($request->string('current_password'), $user->password)) {
+            return ApiResponse::error('INVALID_CREDENTIALS', 'Current password is incorrect.', status: 422);
+        }
+
+        $user->forceFill([
+            'password' => Hash::make($request->string('new_password')->toString()),
+            'must_reset_password' => false,
+        ])->save();
+
+        $this->auditLog->record(ActorType::User, $user->id, 'auth.password_changed', null, null, $request->ip() ?? 'unknown', $request->userAgent(), AuditStatus::Success);
+
+        return ApiResponse::success(['message' => 'Password updated.']);
     }
 
     public function logout(Request $request): JsonResponse

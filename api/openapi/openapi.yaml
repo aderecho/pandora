@@ -108,6 +108,25 @@ paths:
                           user: { $ref: "#/components/schemas/User" }
         "401": { description: Not authenticated }
 
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Self-service password change (also clears must_reset_password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password, new_password_confirmation]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, format: password, minLength: 8 }
+                new_password_confirmation: { type: string, format: password }
+      responses:
+        "200": { description: Password updated }
+        "422": { description: Current password incorrect, or validation failed }
+
   /buckets:
     get:
       tags: [Buckets]
