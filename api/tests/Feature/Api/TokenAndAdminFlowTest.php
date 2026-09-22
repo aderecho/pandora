@@ -10,6 +10,7 @@ use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 class TokenAndAdminFlowTest extends TestCase
@@ -20,14 +21,26 @@ class TokenAndAdminFlowTest extends TestCase
 
     private User $developer;
 
+    private string $storageRoot;
+
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->storageRoot = sys_get_temp_dir().'/fileserver_test_'.uniqid();
+        config(['fileserver.storage_root' => $this->storageRoot]);
 
         $this->seed(RolePermissionSeeder::class);
 
         $this->superAdmin = User::factory()->role(RoleSlug::SuperAdmin)->create();
         $this->developer = User::factory()->role(RoleSlug::Developer)->create();
+    }
+
+    protected function tearDown(): void
+    {
+        File::deleteDirectory($this->storageRoot);
+
+        parent::tearDown();
     }
 
     public function test_admin_can_issue_a_token_for_another_user_with_bucket_scopes(): void
