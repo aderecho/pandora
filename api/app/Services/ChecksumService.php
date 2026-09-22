@@ -10,7 +10,7 @@ class ChecksumService
     public function sha256File(string $absolutePath): string
     {
         $hash = hash_init('sha256');
-        $handle = fopen($absolutePath, 'rb');
+        $handle = @fopen($absolutePath, 'rb');
 
         if ($handle === false) {
             throw new \RuntimeException("Unable to open file for checksum: {$absolutePath}");
@@ -33,7 +33,7 @@ class ChecksumService
     public function md5File(string $absolutePath): string
     {
         $hash = hash_init('md5');
-        $handle = fopen($absolutePath, 'rb');
+        $handle = @fopen($absolutePath, 'rb');
 
         if ($handle === false) {
             throw new \RuntimeException("Unable to open file for checksum: {$absolutePath}");
