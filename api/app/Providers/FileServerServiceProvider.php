@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Events\AccessDenied;
+use App\Listeners\LogAccessDenied;
 use App\Models\ApiToken;
 use App\Models\Bucket;
 use App\Models\StoredObject;
@@ -17,6 +19,7 @@ use App\Services\VirusScan\NullVirusScanner;
 use App\Services\VirusScan\VirusScannerInterface;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -64,6 +67,8 @@ class FileServerServiceProvider extends ServiceProvider
         Gate::policy(Bucket::class, BucketPolicy::class);
         Gate::policy(StoredObject::class, ObjectPolicy::class);
         Gate::policy(ApiToken::class, ApiTokenPolicy::class);
+
+        Event::listen(AccessDenied::class, LogAccessDenied::class);
 
         RateLimiter::for('api', function (Request $request) {
             $key = $request->user()?->id ?? $request->ip();

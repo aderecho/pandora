@@ -1,10 +1,15 @@
 <?php
 
+use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BucketController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ObjectController;
 use App\Http\Controllers\Api\V1\PresignedUrlController;
+use App\Http\Controllers\Api\V1\TokenController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -63,5 +68,31 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             ->where('key', '.*')->middleware('scope:object:read')->name('objects.show');
         Route::delete('/buckets/{bucket}/objects/{key}', [ObjectController::class, 'destroy'])
             ->where('key', '.*')->middleware('scope:object:delete')->name('objects.destroy');
+
+        // Token CRUD is authorized per-token via ApiTokenPolicy (self-service
+        // for your own tokens, or tokens:manage for any user's).
+        Route::get('/tokens', [TokenController::class, 'index'])->name('tokens.index');
+        Route::post('/tokens', [TokenController::class, 'store'])->name('tokens.store');
+        Route::patch('/tokens/{token}', [TokenController::class, 'update'])->name('tokens.update');
+        Route::post('/tokens/{token}/rotate', [TokenController::class, 'rotate'])->name('tokens.rotate');
+        Route::post('/tokens/{token}/revoke', [TokenController::class, 'revoke'])->name('tokens.revoke');
+
+        Route::middleware('scope:audit:read')->group(function () {
+            Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
+            Route::get('/audit-logs/export', [AuditLogController::class, 'export'])->name('audit-logs.export');
+        });
+
+        Route::prefix('admin')->name('admin.')->group(function () {
+            Route::middleware('scope:users:manage')->group(function () {
+                Route::get('/users', [UserController::class, 'index'])->name('users.index');
+                Route::post('/users', [UserController::class, 'store'])->name('users.store');
+                Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
+                Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+                Route::post('/users/{user}/force-password-reset', [UserController::class, 'forcePasswordReset'])->name('users.force-password-reset');
+            });
+
+            Route::middleware('scope:users:manage')->get('/roles', [RoleController::class, 'index'])->name('roles.index');
+            Route::middleware('scope:audit:read')->get('/dashboard/metrics', [DashboardController::class, 'metrics'])->name('dashboard.metrics');
+        });
     });
 });

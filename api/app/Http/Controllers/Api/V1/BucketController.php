@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AuditStatus;
 use App\Enums\PermissionKey;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreBucketRequest;
@@ -53,6 +54,7 @@ class BucketController extends Controller
     public function store(StoreBucketRequest $request): JsonResponse
     {
         $bucket = $this->buckets->create($request->validated(), $request->user());
+        $this->audit('bucket.create', $bucket, null, AuditStatus::Success);
 
         return ApiResponse::success(new BucketResource($bucket), status: 201);
     }
@@ -67,6 +69,7 @@ class BucketController extends Controller
     public function update(UpdateBucketRequest $request, Bucket $bucket): JsonResponse
     {
         $bucket = $this->buckets->update($bucket, $request->validated());
+        $this->audit('bucket.update', $bucket, null, AuditStatus::Success, $request->validated());
 
         return ApiResponse::success(new BucketResource($bucket));
     }
@@ -74,6 +77,7 @@ class BucketController extends Controller
     public function destroy(Bucket $bucket): JsonResponse
     {
         $this->buckets->delete($bucket);
+        $this->audit('bucket.delete', $bucket, null, AuditStatus::Success);
 
         return ApiResponse::success(['message' => 'Bucket deleted.']);
     }

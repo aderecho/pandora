@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AuditStatus;
+use App\Exceptions\Storage\FileRejectedException;
+use App\Exceptions\Storage\QuotaExceededException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\UploadObjectRequest;
 use App\Http\Resources\StoredObjectResource;
@@ -47,24 +50,35 @@ class ObjectController extends Controller
 
         if ($request->isDirectoryRequest()) {
             $object = $this->objects->makeDirectory($bucket, $key);
+            $this->audit('object.mkdir', $bucket, $key, AuditStatus::Success);
 
             return ApiResponse::success(new StoredObjectResource($object), status: 201);
         }
 
-        $object = $this->objects->upload(
-            $bucket,
-            $key,
-            $request->file('file'),
-            $request->user(),
-            CurrentActor::token(),
-        );
+        try {
+            $object = $this->objects->upload(
+                $bucket,
+                $key,
+                $request->file('file'),
+                $request->user(),
+                CurrentActor::token(),
+            );
+        } catch (FileRejectedException|QuotaExceededException $e) {
+            $this->audit('object.upload', $bucket, $key, AuditStatus::Failure, ['reason' => $e->getMessage()]);
+            throw $e;
+        }
+
+        $this->audit('object.upload', $bucket, $key, AuditStatus::Success, ['size_bytes' => $object->size_bytes]);
 
         return ApiResponse::success(new StoredObjectResource($object), status: 201);
     }
 
     public function show(Bucket $bucket, string $key): StreamedResponse
     {
-        return $this->objects->download($bucket, $key);
+        $response = $this->objects->download($bucket, $key);
+        $this->audit('object.download', $bucket, $key, AuditStatus::Success);
+
+        return $response;
     }
 
     public function metadata(Bucket $bucket, string $key): JsonResponse
@@ -77,6 +91,7 @@ class ObjectController extends Controller
     public function destroy(Bucket $bucket, string $key): JsonResponse
     {
         $this->objects->delete($bucket, $key);
+        $this->audit('object.delete', $bucket, $key, AuditStatus::Success);
 
         return ApiResponse::success(['message' => 'Object deleted.']);
     }

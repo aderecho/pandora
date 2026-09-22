@@ -12,7 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 #[Fillable([
-    'user_id', 'name', 'abilities', 'status', 'expires_at', 'allowed_ips', 'created_by',
+    'user_id', 'name', 'token_hash', 'token_prefix', 'abilities', 'status',
+    'expires_at', 'allowed_ips', 'created_by',
 ])]
 #[Hidden(['token_hash'])]
 class ApiToken extends Model
