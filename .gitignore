@@ -1,0 +1,50 @@
+# --- API (Laravel) ---
+api/.env
+api/.env.*
+!api/.env.example
+api/vendor/
+api/node_modules/
+api/public/hot
+api/public/storage
+api/public/build
+api/storage/*.key
+api/storage/app/buckets/*
+!api/storage/app/buckets/.gitkeep
+api/storage/framework/cache/data/*
+api/storage/framework/sessions/*
+api/storage/framework/testing/*
+api/storage/framework/views/*
+!api/storage/framework/cache/data/.gitignore
+!api/storage/framework/sessions/.gitignore
+!api/storage/framework/testing/.gitignore
+!api/storage/framework/views/.gitignore
+api/storage/logs/*
+!api/storage/logs/.gitignore
+api/bootstrap/cache/*.php
+!api/bootstrap/cache/.gitignore
+api/.phpunit.cache
+api/.phpunit.result.cache
+
+# --- Admin (Vue) ---
+admin/node_modules/
+admin/dist/
+admin/dist-ssr/
+admin/.env
+admin/.env.*
+!admin/.env.example
+admin/*.local
+
+# --- CLI ---
+cli/vendor/
+cli/.env
+cli/.env.*
+!cli/.env.example
+cli/.phpunit.cache
+cli/.phpunit.result.cache
+cli/build/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.log
