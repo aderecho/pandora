@@ -4,13 +4,13 @@ namespace App\Services;
 
 use App\Exceptions\Storage\FileRejectedException;
 use App\Exceptions\Storage\ObjectNotFoundException;
+use App\Jobs\ScanObjectForViruses;
 use App\Models\ApiToken;
 use App\Models\Bucket;
 use App\Models\StoredObject;
 use App\Models\User;
 use App\Services\Storage\FileObject;
 use App\Services\Storage\StorageManager;
-use App\Services\VirusScan\VirusScannerInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +21,6 @@ class ObjectService
     public function __construct(
         private readonly StorageManager $storage,
         private readonly QuotaService $quota,
-        private readonly VirusScannerInterface $virusScanner,
     ) {}
 
     public function upload(Bucket $bucket, string $key, UploadedFile $file, ?User $user, ?ApiToken $token): StoredObject
@@ -239,17 +238,7 @@ class ObjectService
             $driver->put($bucket->storage_path, $this->versionedKey($key, $nextVersionNumber), $this->absolutePathFor($bucket, $key));
         }
 
-        $scan = $this->virusScanner->scan($this->absolutePathFor($bucket, $key));
-
-        if (! $scan->clean) {
-            $driver->delete($bucket->storage_path, $key);
-            if ($bucket->versioning_enabled) {
-                $driver->delete($bucket->storage_path, $this->versionedKey($key, $nextVersionNumber));
-            }
-            throw FileRejectedException::because("File failed virus scan: {$scan->signature}");
-        }
-
-        return DB::transaction(function () use ($bucket, $key, $fileObject, $existing, $nextVersionNumber, $user, $token) {
+        $storedObject = DB::transaction(function () use ($bucket, $key, $fileObject, $existing, $nextVersionNumber, $user, $token) {
             if ($existing) {
                 $existing->update([
                     'size_bytes' => $fileObject->sizeBytes,
@@ -310,6 +299,10 @@ class ObjectService
 
             return $storedObject->fresh(['currentVersion']);
         });
+
+        ScanObjectForViruses::dispatch($bucket->id, $key);
+
+        return $storedObject;
     }
 
     private function findLive(Bucket $bucket, string $key, array $with = []): StoredObject
