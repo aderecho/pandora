@@ -1,0 +1,688 @@
+openapi: 3.0.3
+info:
+  title: FileServer API
+  description: >
+    Self-hosted, S3-style object storage platform. Buckets contain objects
+    addressed by bucket name + object key. Admin dashboard users authenticate
+    via a Sanctum session cookie; CLI/API clients authenticate via a Bearer
+    API token. Every response uses a standard envelope:
+    `{"data": ..., "meta": {...}, "error": null}` on success, or
+    `{"data": null, "error": {"code","message","details"}}` on failure.
+  version: "1.0.0"
+  contact:
+    name: Narrasoft
+servers:
+  - url: /api/v1
+    description: Current host, versioned API root
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+tags:
+  - name: Auth
+  - name: Buckets
+  - name: Objects
+  - name: Presigned URLs
+  - name: Tokens
+  - name: Audit Logs
+  - name: Admin
+  - name: System
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthEnvelope" }
+        "503":
+          description: One or more dependencies degraded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthEnvelope" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Admin dashboard login (session cookie)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user: { $ref: "#/components/schemas/User" }
+        "422":
+          description: Invalid credentials
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out of the current session
+      responses:
+        "200": { description: Logged out }
+
+  /buckets:
+    get:
+      tags: [Buckets]
+      summary: List buckets visible to the current actor
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, archived] } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200":
+          description: Paginated bucket list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Bucket" }
+                      meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Buckets]
+      summary: Create a bucket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BucketCreateRequest" }
+      responses:
+        "201":
+          description: Bucket created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/Bucket" } }
+
+  /buckets/{bucket}:
+    parameters:
+      - { $ref: "#/components/parameters/BucketName" }
+    get:
+      tags: [Buckets]
+      summary: Get bucket configuration and usage
+      responses:
+        "200": { description: Bucket detail }
+    patch:
+      tags: [Buckets]
+      summary: Update bucket configuration (rename, quota, versioning, archive, ...)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BucketUpdateRequest" }
+      responses:
+        "200": { description: Bucket updated }
+    delete:
+      tags: [Buckets]
+      summary: Delete a bucket (soft delete)
+      responses:
+        "200": { description: Bucket deleted }
+
+  /buckets/{bucket}/objects:
+    parameters:
+      - { $ref: "#/components/parameters/BucketName" }
+    get:
+      tags: [Objects]
+      summary: List objects/folders under a prefix (one level, S3-style)
+      parameters:
+        - { name: prefix, in: query, schema: { type: string } }
+        - { name: name, in: query, description: substring search, schema: { type: string } }
+        - { name: mime_type, in: query, schema: { type: string } }
+        - { name: uploaded_by, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200":
+          description: Paginated listing of folders and files
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          oneOf:
+                            - { $ref: "#/components/schemas/FolderEntry" }
+                            - { $ref: "#/components/schemas/StoredObject" }
+                      meta: { $ref: "#/components/schemas/PaginationMeta" }
+    post:
+      tags: [Objects]
+      summary: Upload an object, or create a folder marker (key ending in "/")
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string, example: reports/2026/q3.pdf }
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Object stored
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/StoredObject" } }
+        "413": { description: Quota exceeded }
+        "422": { description: Validation failed, or file rejected by extension/MIME policy }
+
+  /buckets/{bucket}/objects/{key}:
+    parameters:
+      - { $ref: "#/components/parameters/BucketName" }
+      - { $ref: "#/components/parameters/ObjectKey" }
+    get:
+      tags: [Objects]
+      summary: Download an object
+      responses:
+        "200":
+          description: Binary object stream
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "404": { description: Object not found }
+    delete:
+      tags: [Objects]
+      summary: Delete an object (removes live bytes immediately; version history retained if versioning is enabled)
+      responses:
+        "200": { description: Object deleted }
+
+  /buckets/{bucket}/objects/{key}/metadata:
+    parameters:
+      - { $ref: "#/components/parameters/BucketName" }
+      - { $ref: "#/components/parameters/ObjectKey" }
+    get:
+      tags: [Objects]
+      summary: Object metadata + version history
+      responses:
+        "200":
+          description: Object metadata
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/StoredObject" } }
+
+  /buckets/{bucket}/objects/{key}/presigned-download:
+    parameters:
+      - { $ref: "#/components/parameters/BucketName" }
+      - { $ref: "#/components/parameters/ObjectKey" }
+    post:
+      tags: [Presigned URLs]
+      summary: Generate a time-limited, unauthenticated download URL
+      responses:
+        "200":
+          description: Presigned URL
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/PresignedUrl" } }
+
+  /buckets/{bucket}/presigned-upload:
+    parameters:
+      - { $ref: "#/components/parameters/BucketName" }
+    post:
+      tags: [Presigned URLs]
+      summary: Generate a time-limited, unauthenticated upload URL
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string }
+                max_size_bytes: { type: integer, nullable: true }
+                ttl_seconds: { type: integer, nullable: true, maximum: 86400 }
+      responses:
+        "200":
+          description: Presigned URL
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/PresignedUrl" } }
+
+  /public/objects/download:
+    get:
+      tags: [Presigned URLs]
+      summary: Consume a presigned download URL (signature-verified, no auth header)
+      security: []
+      parameters:
+        - { name: bucket, in: query, required: true, schema: { type: string } }
+        - { name: key, in: query, required: true, schema: { type: string } }
+        - { name: expires, in: query, required: true, schema: { type: integer } }
+        - { name: signature, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Binary object stream }
+        "403": { description: Invalid or expired signature }
+
+  /public/objects/upload:
+    put:
+      tags: [Presigned URLs]
+      summary: Consume a presigned upload URL (signature-verified, raw body)
+      security: []
+      parameters:
+        - { name: bucket, in: query, required: true, schema: { type: string } }
+        - { name: key, in: query, required: true, schema: { type: string } }
+        - { name: expires, in: query, required: true, schema: { type: integer } }
+        - { name: max_size, in: query, schema: { type: integer } }
+        - { name: signature, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: { schema: { type: string, format: binary } }
+      responses:
+        "201": { description: Object stored }
+        "403": { description: Invalid or expired signature }
+        "422": { description: File exceeds the signed max size }
+
+  /tokens:
+    get:
+      tags: [Tokens]
+      summary: List API tokens (own tokens, or all with tokens:manage)
+      responses:
+        "200": { description: Paginated token list }
+    post:
+      tags: [Tokens]
+      summary: Create an API token — the raw token is returned once, never again
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenCreateRequest" }
+      responses:
+        "201":
+          description: Token created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          token: { $ref: "#/components/schemas/Token" }
+                          raw_token: { type: string, description: "Shown only in this response — store it now." }
+
+  /tokens/{token}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Tokens]
+      summary: Update a token's name/abilities/expiry/IP allow-list/bucket scopes
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenUpdateRequest" }
+      responses:
+        "200": { description: Token updated }
+
+  /tokens/{token}/rotate:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Tokens]
+      summary: Rotate a token — invalidates the old raw value, returns a new one once
+      responses:
+        "200": { description: Token rotated }
+
+  /tokens/{token}/revoke:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Tokens]
+      summary: Revoke a token immediately
+      responses:
+        "200": { description: Token revoked }
+
+  /audit-logs:
+    get:
+      tags: [Audit Logs]
+      summary: List audit log entries (requires audit:read)
+      parameters:
+        - { name: actor_type, in: query, schema: { type: string, enum: [user, token, system] } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [success, failure] } }
+        - { name: bucket_id, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Paginated audit log }
+
+  /audit-logs/export:
+    get:
+      tags: [Audit Logs]
+      summary: Export the (filtered) audit log as CSV
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv: { schema: { type: string } }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List platform users (requires users:manage)
+      responses:
+        "200": { description: Paginated user list }
+    post:
+      tags: [Admin]
+      summary: Create a user
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreateRequest" }
+      responses:
+        "201": { description: User created; generated_password shown once if not provided }
+
+  /admin/users/{user}:
+    parameters:
+      - { name: user, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Admin]
+      summary: Update a user (name/email/role/status)
+      responses:
+        "200": { description: User updated }
+    delete:
+      tags: [Admin]
+      summary: Delete (soft-delete) a user
+      responses:
+        "200": { description: User deleted }
+
+  /admin/users/{user}/force-password-reset:
+    parameters:
+      - { name: user, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Admin]
+      summary: Force a password reset — returns a newly generated password once
+      responses:
+        "200": { description: Password reset }
+
+  /admin/roles:
+    get:
+      tags: [Admin]
+      summary: List roles and their permissions
+      responses:
+        "200": { description: Role list }
+
+  /admin/dashboard/metrics:
+    get:
+      tags: [Admin]
+      summary: Aggregate dashboard metrics (storage used, users, tokens, recent activity)
+      responses:
+        "200": { description: Metrics }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "CLI/API clients: Authorization: Bearer <client-token>"
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: fileserver_session
+      description: Admin dashboard SPA session (Sanctum stateful cookie + CSRF token)
+
+  parameters:
+    BucketName:
+      name: bucket
+      in: path
+      required: true
+      description: Bucket name (not numeric ID)
+      schema: { type: string }
+    ObjectKey:
+      name: key
+      in: path
+      required: true
+      description: Object key/path within the bucket; may contain slashes
+      schema: { type: string }
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        data: {}
+        error: { nullable: true }
+    ErrorEnvelope:
+      type: object
+      properties:
+        data: { nullable: true, example: null }
+        error:
+          type: object
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string }
+            details: { type: object, nullable: true }
+    PaginationMeta:
+      type: object
+      properties:
+        pagination:
+          type: object
+          properties:
+            current_page: { type: integer }
+            per_page: { type: integer }
+            total: { type: integer }
+            last_page: { type: integer }
+    HealthEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status: { type: string, enum: [ok, degraded] }
+                checks:
+                  type: object
+                  properties:
+                    database: { type: boolean }
+                    redis: { type: boolean }
+                    storage: { type: boolean }
+                timestamp: { type: string, format: date-time }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        role: { type: object, properties: { id: { type: integer }, name: { type: string }, slug: { type: string } } }
+        status: { type: string, enum: [active, disabled] }
+        must_reset_password: { type: boolean }
+        last_login_at: { type: string, format: date-time, nullable: true }
+        last_login_ip: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    UserCreateRequest:
+      type: object
+      required: [name, email, role_id]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        role_id: { type: integer }
+        password: { type: string, nullable: true, description: "Omit to auto-generate a one-time password" }
+
+    Bucket:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        storage_path: { type: string }
+        driver: { type: string, enum: [local, s3, minio] }
+        quota_bytes: { type: integer, nullable: true }
+        max_file_size_bytes: { type: integer, nullable: true }
+        allowed_extensions: { type: array, items: { type: string }, nullable: true }
+        allowed_mime_types: { type: array, items: { type: string }, nullable: true }
+        versioning_enabled: { type: boolean }
+        public_access: { type: boolean }
+        status: { type: string, enum: [active, archived] }
+        created_by: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    BucketCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, example: documents }
+        storage_path: { type: string, nullable: true }
+        quota_bytes: { type: integer, nullable: true }
+        max_file_size_bytes: { type: integer, nullable: true }
+        allowed_extensions: { type: array, items: { type: string } }
+        allowed_mime_types: { type: array, items: { type: string } }
+        versioning_enabled: { type: boolean }
+        public_access: { type: boolean }
+
+    BucketUpdateRequest:
+      allOf:
+        - $ref: "#/components/schemas/BucketCreateRequest"
+        - type: object
+          properties:
+            status: { type: string, enum: [active, archived] }
+
+    FolderEntry:
+      type: object
+      properties:
+        type: { type: string, enum: [folder] }
+        key: { type: string, example: "reports/2026/" }
+
+    StoredObject:
+      type: object
+      properties:
+        type: { type: string, enum: [file] }
+        key: { type: string }
+        basename: { type: string }
+        size_bytes: { type: integer }
+        mime_type: { type: string, nullable: true }
+        checksum_sha256: { type: string }
+        etag: { type: string, nullable: true }
+        uploaded_by: { type: string, nullable: true }
+        uploaded_via_token: { type: string, nullable: true }
+        metadata: { type: object, nullable: true }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/ObjectVersion" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ObjectVersion:
+      type: object
+      properties:
+        version_number: { type: integer }
+        size_bytes: { type: integer }
+        checksum_sha256: { type: string }
+        is_current: { type: boolean }
+        uploaded_by: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    PresignedUrl:
+      type: object
+      properties:
+        url: { type: string }
+        method: { type: string, enum: [GET, PUT] }
+        expires_at: { type: string, format: date-time }
+        max_size_bytes: { type: integer, nullable: true }
+
+    Token:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        token_prefix: { type: string, example: "fsk_ab12..." }
+        owner: { type: string, nullable: true }
+        abilities: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, revoked] }
+        expires_at: { type: string, format: date-time, nullable: true }
+        allowed_ips: { type: array, items: { type: string }, nullable: true }
+        bucket_scopes:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket: { type: string }
+              path_prefix: { type: string, nullable: true }
+              permissions: { type: array, items: { type: string } }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        last_used_ip: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    TokenCreateRequest:
+      type: object
+      required: [name, abilities]
+      properties:
+        name: { type: string }
+        user_id: { type: integer, nullable: true, description: "Requires tokens:manage to set for another user" }
+        abilities:
+          type: array
+          items: { type: string, enum: [bucket:list, bucket:read, bucket:write, bucket:delete, object:list, object:read, object:write, object:delete] }
+        expires_at: { type: string, format: date-time, nullable: true }
+        allowed_ips: { type: array, items: { type: string }, nullable: true }
+        bucket_scopes:
+          type: array
+          items:
+            type: object
+            required: [bucket, permissions]
+            properties:
+              bucket: { type: string }
+              path_prefix: { type: string, nullable: true }
+              permissions: { type: array, items: { type: string } }
+
+    TokenUpdateRequest:
+      allOf:
+        - $ref: "#/components/schemas/TokenCreateRequest"
