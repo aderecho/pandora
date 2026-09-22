@@ -7,7 +7,9 @@ return [
     | Storage
     |--------------------------------------------------------------------------
     */
-    'storage_root' => env('FILESERVER_STORAGE_ROOT', storage_path('app/buckets')),
+    'storage_root' => str_starts_with($root = env('FILESERVER_STORAGE_ROOT', 'storage/app/buckets'), '/')
+        ? $root
+        : base_path($root),
 
     'default_quota_bytes' => (int) env('FILESERVER_DEFAULT_QUOTA_BYTES', 10 * 1024 * 1024 * 1024),
 
