@@ -4,6 +4,35 @@ This guide explains how to integrate FileServer with another application, includ
 
 For endpoint-level examples, see [`API_EXAMPLES.md`](./API_EXAMPLES.md). The complete request and response contract is [`../api/openapi/openapi.yaml`](../api/openapi/openapi.yaml).
 
+## Interactive Swagger documentation
+
+Open `/docs` on the API host. For the Pandora same-domain deployment, use
+`https://pandora.upcebu.edu.ph/docs`. Download the specification from
+`https://pandora.upcebu.edu.ph/docs/openapi.yaml` for importing into API clients.
+
+Click **Authorize** and paste a dedicated integration token without the `Bearer`
+prefix. Choose an endpoint, click **Try it out**, fill its parameters, and execute
+the request. The API server URL is `/api/v1` on the current host. Authorization is
+not persisted across page reloads. Executed requests affect the live environment.
+
+When Nginx serves the Vue dashboard and Laravel from the same domain, add these
+locations to the HTTPS server block alongside the `/api/` and `/sanctum/` routes:
+
+```nginx
+location = /docs {
+    rewrite ^ /index.php last;
+}
+
+location ^~ /docs/ {
+    rewrite ^ /index.php last;
+}
+```
+
+The existing `location = /index.php` must execute
+`/var/www/fileserver/api/public/index.php` through PHP-FPM. Validate with
+`sudo nginx -t` before reloading Nginx. Swagger's JavaScript and CSS are loaded
+from jsDelivr, which must be accessible to the browser.
+
 ## Integration model
 
 The integrating application should:
